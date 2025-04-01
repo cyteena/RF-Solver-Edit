@@ -10,27 +10,53 @@ from .modules.conditioner import HFEmbedder
 
 
 def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
+    """
+    准备模型输入数据，包括图像、图像ID、文本、文本ID和向量。
+
+    参数:
+    t5 (HFEmbedder): T5嵌入器，用于将文本转换为嵌入向量。
+    clip (HFEmbedder): CLIP嵌入器，用于将文本转换为向量。
+    img (Tensor): 输入的图像张量。
+    prompt (str | list[str]): 输入的文本提示，可以是单个字符串或字符串列表。
+
+    返回:
+    dict[str, Tensor]: 包含准备好的图像、图像ID、文本、文本ID和向量的字典。
+    """
+    # 获取图像的批次大小、通道数、高度和宽度
     bs, c, h, w = img.shape
+    # 如果批次大小为1且提示不是字符串，则更新批次大小为提示列表的长度
     if bs == 1 and not isinstance(prompt, str):
         bs = len(prompt)
 
+    # 重新排列图像张量的维度
     img = rearrange(img, "b c (h ph) (w pw) -> b (h w) (c ph pw)", ph=2, pw=2)
+    # 如果图像的批次大小为1且更新后的批次大小大于1，则复制图像以匹配批次大小
     if img.shape[0] == 1 and bs > 1:
         img = repeat(img, "1 ... -> bs ...", bs=bs)
 
+    # 初始化图像ID张量
     img_ids = torch.zeros(h // 2, w // 2, 3)
+    # 在图像ID的第二个通道(channel)上添加高度索引
     img_ids[..., 1] = img_ids[..., 1] + torch.arange(h // 2)[:, None]
+    # 在图像ID的第三个通道(channel)上添加宽度索引
     img_ids[..., 2] = img_ids[..., 2] + torch.arange(w // 2)[None, :]
+    # 复制图像ID以匹配批次大小
     img_ids = repeat(img_ids, "h w c -> b (h w) c", b=bs)
 
+    # 如果提示是单个字符串，则将其转换为包含单个字符串的列表
     if isinstance(prompt, str):
         prompt = [prompt]
+    # 使用T5嵌入器将提示转换为文本嵌入向量
     txt = t5(prompt)
+    # 如果文本嵌入向量的批次大小为1且更新后的批次大小大于1，则复制文本嵌入向量以匹配批次大小
     if txt.shape[0] == 1 and bs > 1:
         txt = repeat(txt, "1 ... -> bs ...", bs=bs)
+    # 初始化文本ID张量
     txt_ids = torch.zeros(bs, txt.shape[1], 3)
 
+    # 使用CLIP嵌入器将提示转换为向量
     vec = clip(prompt)
+    # 如果向量的批次大小为1且更新后的批次大小大于1，则复制向量以匹配批次大小
     if vec.shape[0] == 1 and bs > 1:
         vec = repeat(vec, "1 ... -> bs ...", bs=bs)
 
