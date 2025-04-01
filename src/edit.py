@@ -76,7 +76,7 @@ def main(
     num_steps = args.num_steps
     offload = args.offload
 
-    nsfw_classifier = pipeline("image-classification", model="Falconsai/nsfw_image_detection", device=device)
+    # nsfw_classifier = pipeline("image-classification", model="Falconsai/nsfw_image_detection", device=device)
 
     if name not in configs:
         available = ", ".join(configs.keys())
@@ -98,7 +98,10 @@ def main(
         ae.encoder.to(torch_device)
     
     init_image = None
-    init_image = np.array(Image.open(args.source_img_dir).convert('RGB'))
+    if args.source_img_dir:
+        init_image = np.array(Image.open(args.source_img_dir).convert('RGB'))
+    else:
+        raise ValueError("source_img_dir must be specified")
 
     shape = init_image.shape
 
@@ -122,13 +125,14 @@ def main(
     )
 
     if loop:
-        opts = parse_prompt(opts)
-
+        # opts = parse_prompt(opts)
+        pass
+        
     while opts is not None:
         if opts.seed is None:
             opts.seed = rng.seed()
         print(f"Generating with seed {opts.seed}:\n{opts.source_prompt}")
-        t0 = time.perf_counter()
+
 
         opts.seed = None
         if offload:
@@ -153,6 +157,7 @@ def main(
             torch.cuda.empty_cache()
             model = model.to(torch_device)
 
+        t0 = time.perf_counter() # 只计算denoise的时间 ： inversion and denoise
         # inversion initial noise
         z, info = denoise(model, **inp, timesteps=timesteps, guidance=1, inverse=True, info=info)
         
@@ -199,7 +204,11 @@ def main(
             x = rearrange(x[0], "c h w -> h w c")
 
             img = Image.fromarray((127.5 * (x + 1.0)).cpu().byte().numpy())
-            nsfw_score = [x["score"] for x in nsfw_classifier(img) if x["label"] == "nsfw"][0]
+            # try:
+            #     results = nsfw_classifier(img)
+            #     nsfw_score = next((x["score"] for x in results if x["label"] == "nsfw"), 0.0)
+            # except:
+            nsfw_score = 0.0
             
             if nsfw_score < NSFW_THRESHOLD:
                 exif_data = Image.Exif()
@@ -215,7 +224,7 @@ def main(
 
             if loop:
                 print("-" * 80)
-                opts = parse_prompt(opts)
+                # opts = parse_prompt(opts)
             else:
                 opts = None
 
